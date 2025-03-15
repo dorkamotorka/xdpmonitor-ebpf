@@ -1,2 +1,3 @@
-# pktdrop-ebpf
-Repository for monitoring packet drops across the whole Kernel Networking stack using eBPF
+# pktmonitor-ebpf
+
+Repository for monitoring eBPF actions in TC and XDP hooks on the network stack using eBPF. In other words tracing eBPF with eBPF.
