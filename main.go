@@ -52,12 +52,17 @@ func lookupAndPrintXdpStats(ebpfMap *ebpf.Map) {
 		"XDP_REDIRECT": 4,
 	}
 
-	for action, key := range actionKeys {
+	// Predefined order of keys
+	orderedKeys := []string{"XDP_ABORTED", "XDP_DROP", "XDP_PASS", "XDP_TX", "XDP_REDIRECT"}
+
+	fmt.Println("XDP Actions:")
+	for _, action := range orderedKeys {
+		key := actionKeys[action]
 		var value uint64
 		if err := ebpfMap.Lookup(&key, &value); err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("%s: %d", action, value)
+		fmt.Printf("%s: %d\n", action, value)
 	}
 }
 
@@ -75,12 +80,20 @@ func lookupAndPrintTcStats(ebpfMap *ebpf.Map) {
 		"TC_ACT_TRAP":       8,
 	}
 
-	for action, key := range tcActionKeys {
+	// Define a fixed order for TC actions
+	orderedKeys := []string{
+		"TC_ACT_OK", "TC_ACT_RECLASSIFY", "TC_ACT_SHOT", "TC_ACT_PIPE",
+		"TC_ACT_STOLEN", "TC_ACT_QUEUED", "TC_ACT_REPEAT", "TC_ACT_REDIRECT", "TC_ACT_TRAP",
+	}
+
+	fmt.Println("\nTC Actions:")
+	for _, action := range orderedKeys {
+		key := tcActionKeys[action]
 		var value uint64
 		if err := ebpfMap.Lookup(&key, &value); err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("%s: %d", action, value)
+		fmt.Printf("%s: %d\n", action, value)
 	}
 }
 
@@ -200,6 +213,7 @@ func main() {
 	log.Printf("Try sending a dummy network packet to the %s.", device)
 
 	for {
+		fmt.Print("\033[H\033[J") // Clear screen
 		lookupAndPrintXdpStats(obj.XdpActionCountMap)
 		lookupAndPrintTcStats(obj.TcActionCountMap)
 
