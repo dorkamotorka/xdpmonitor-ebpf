@@ -7,6 +7,11 @@ import (
 	"fmt"
 	"net"
 	"errors"
+	"os"
+	"os/signal"
+	"syscall"
+	"context"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -38,10 +43,54 @@ func getFuncName(prog *ebpf.Program) (string, error) {
 	return "", fmt.Errorf("no entry function found in program")
 }
 
+func lookupAndPrintXdpStats(ebpfMap *ebpf.Map) {
+	actionKeys := map[string]uint32{
+		"XDP_ABORTED":  0,
+		"XDP_DROP":     1,
+		"XDP_PASS":     2,
+		"XDP_TX":       3,
+		"XDP_REDIRECT": 4,
+	}
+
+	for action, key := range actionKeys {
+		var value uint64
+		if err := ebpfMap.Lookup(&key, &value); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("%s: %d", action, value)
+	}
+}
+
+func lookupAndPrintTcStats(ebpfMap *ebpf.Map) {
+	tcActionKeys := map[string]uint32{
+		//"TC_ACT_UNSPEC":     uint32(-1),
+		"TC_ACT_OK":         0,
+		"TC_ACT_RECLASSIFY": 1,
+		"TC_ACT_SHOT":       2,
+		"TC_ACT_PIPE":       3,
+		"TC_ACT_STOLEN":     4,
+		"TC_ACT_QUEUED":     5,
+		"TC_ACT_REPEAT":     6,
+		"TC_ACT_REDIRECT":   7,
+		"TC_ACT_TRAP":       8,
+	}
+
+	for action, key := range tcActionKeys {
+		var value uint64
+		if err := ebpfMap.Lookup(&key, &value); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("%s: %d", action, value)
+	}
+}
+
 func main() {
 	var device string
 	flag.StringVarP(&device, "device", "d", "lo", "device to attach XDP program")
 	flag.Parse()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	if err := rlimit.RemoveMemlock(); err != nil {
 		log.Fatalf("Failed to remove rlimit memlock: %v", err)
@@ -150,5 +199,16 @@ func main() {
 	log.Println("Programs attached and running...")
 	log.Printf("Try sending a dummy network packet to the %s.", device)
 
-	select {}
+	for {
+		lookupAndPrintXdpStats(obj.XdpActionCountMap)
+		lookupAndPrintTcStats(obj.TcActionCountMap)
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		time.Sleep(1 * time.Second)
+	}
 }

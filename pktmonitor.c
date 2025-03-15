@@ -12,14 +12,14 @@ struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
     __type(value, __u64);
-    __uint(max_entries, 4);
+    __uint(max_entries, 5);
 } xdp_action_count_map SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, __u32);
     __type(value, __u64);
-    __uint(max_entries, 4);
+    __uint(max_entries, 9);
 } tc_action_count_map SEC(".maps");
 
 // XDP
