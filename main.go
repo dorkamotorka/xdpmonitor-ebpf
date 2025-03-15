@@ -79,9 +79,6 @@ func main() {
 		log.Printf("Failed to get function name: %v", err)
 		return
 	}
-	xdpFentry := spec.Programs["fentry_xdp"]
-	xdpFentry.AttachTarget = xdpDummyProg
-	xdpFentry.AttachTo = xdpFuncName
 	xdpFexit := spec.Programs["fexit_xdp"]
 	xdpFexit.AttachTarget = xdpDummyProg
 	xdpFexit.AttachTo = xdpFuncName
@@ -91,9 +88,6 @@ func main() {
 		log.Printf("Failed to get function name: %v", err)
 		return
 	}
-	tcFentry := spec.Programs["fentry_tc"]
-	tcFentry.AttachTarget = tcDummyProg
-	tcFentry.AttachTo = tcFuncName
 	tcFexit := spec.Programs["fexit_tc"]
 	tcFexit.AttachTarget = tcDummyProg
 	tcFexit.AttachTo = tcFuncName
@@ -122,16 +116,7 @@ func main() {
 	}
 	defer xdplink.Close()
 
-	// Attach fentry to XDP
-	xdpfentry, err := link.AttachTracing(link.TracingOptions{
-                Program:   obj.FentryXdp,
-                //AttachType: ebpf.AttachTraceFEntry,
-        })
-        if err != nil {
-                log.Fatalf("Failed to attach fentry program: %v", err)
-        }
-        defer xdpfentry.Close()
-
+	// Attach fexit to XDP
 	xdpfexit, err := link.AttachTracing(link.TracingOptions{
                 Program:   obj.FexitXdp,
                 //AttachType: ebpf.AttachTraceFExit,
@@ -152,16 +137,7 @@ func main() {
 	}
 	defer tclink.Close()
 
-	// Attach fentry to TC
-	tcfentry, err := link.AttachTracing(link.TracingOptions{
-                Program:   obj.FentryTc,
-                //AttachType: ebpf.AttachTraceFEntry,
-        })
-        if err != nil {
-                log.Fatalf("Failed to attach fentry program: %v", err)
-        }
-        defer tcfentry.Close()
-
+	// Attach fexit to TC
 	tcfexit, err := link.AttachTracing(link.TracingOptions{
                 Program:   obj.FexitTc,
                 //AttachType: ebpf.AttachTraceFExit,
@@ -172,7 +148,7 @@ func main() {
         defer tcfexit.Close()
 
 	log.Println("Programs attached and running...")
-	log.Printf("Try sending an ICMP packet (IPv4) to the %s.", device)
+	log.Printf("Try sending a dummy network packet to the %s.", device)
 
 	select {}
 }
