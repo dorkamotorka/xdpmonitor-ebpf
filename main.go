@@ -74,7 +74,7 @@ func lookupAndPrintStats(ebpfMap *ebpf.Map, keys map[string]uint32, keyOrder []s
 
 func main() {
         var xdpProgID int
-        flag.IntVarP(&xdpProgID, "xdp_program_id", "x", 0, "XDP program ID to trace")
+        flag.IntVarP(&xdpProgID, "xdp-program-id", "i", 0, "XDP program ID to trace")
         flag.Parse()
 
         if xdpProgID == 0 {
