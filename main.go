@@ -51,16 +51,25 @@ func getFuncName(prog *ebpf.Program) (string, error) {
         return "", fmt.Errorf("no entry function found in program")
 }
 
-func lookupAndPrintStats(ebpfMap *ebpf.Map, keys map[string]uint32, keyOrder []string, title string) {
-        fmt.Println("\n" + title + ":")
+func lookupAndPrintStats(ebpfMap *ebpf.Map, keys map[string]uint32, keyOrder []string, prevValues map[string]uint64, prevTime *time.Time) {
+        fmt.Println("\nXDP Actions:")
+	now := time.Now()
+ 	deltaTime := now.Sub(*prevTime).Seconds()
+ 	if deltaTime == 0 {
+ 		return // Avoid division by zero
+ 	}
         for _, action := range keyOrder {
                 key := keys[action]
                 var value uint64
                 if err := ebpfMap.Lookup(&key, &value); err != nil {
                         log.Fatalf("Failed to lookup map: %v", err)
                 }
-                fmt.Printf("%s: %d\n", action, value)
+		prev := prevValues[action]
+ 		prevValues[action] = value
+ 		rate := float64(value-prev) / deltaTime
+ 		fmt.Printf("%s: %d (Rate: %.2f/s)\n", action, value, rate)
         }
+	*prevTime = now
 }
 
 func main() {
@@ -123,13 +132,16 @@ func main() {
         ticker := time.NewTicker(1 * time.Second)
         defer ticker.Stop()
 
+	prevValues := make(map[string]uint64)
+ 	prevTime := time.Now()
+
         for {
                 select {
                 case <-ctx.Done():
                         return
                 case <-ticker.C:
                         fmt.Print("\033[H\033[J")
-                        lookupAndPrintStats(obj.XdpActionCountMap, xdpKeys, xdpKeyOrder, "XDP Actions")
+                        lookupAndPrintStats(obj.XdpActionCountMap, xdpKeys, xdpKeyOrder, prevValues, &prevTime)
                 }
         }
 }
