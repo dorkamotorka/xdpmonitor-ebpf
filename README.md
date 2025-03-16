@@ -1,3 +1,3 @@
-# pktmonitor-ebpf
+# xdpmonitor-ebpf
 
-Repository for monitoring eBPF actions in TC and XDP hooks on the network stack using eBPF. In other words tracing eBPF with eBPF.
+Repository for monitoring XDP actions using eBPF. In other words tracing eBPF with eBPF.
