@@ -31,6 +31,11 @@ func getFuncName(prog *ebpf.Program) (string, error) {
                 return "", fmt.Errorf("failed to get program info: %w", err)
         }
 
+	// Ensure the program is a XDP program
+	if info.Type != ebpf.XDP {
+		return "", fmt.Errorf("program is not a XDP program")
+	}
+
         if _, ok := info.BTFID(); !ok {
                 return "", fmt.Errorf("program does not have BTF ID")
         }
