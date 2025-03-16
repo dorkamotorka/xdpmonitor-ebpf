@@ -68,6 +68,7 @@ func main() {
 
 	if xdpProgID == 0 {
 		fmt.Println("You need to specify XDP program ID")
+		return
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
