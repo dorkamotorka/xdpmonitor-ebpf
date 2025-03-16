@@ -42,7 +42,7 @@ func getFuncName(prog *ebpf.Program) (string, error) {
 	return "", fmt.Errorf("no entry function found in program")
 }
 
-func lookupAndPrintXdpStats(ebpfMap *ebpf.Map, prevValues map[string]uint64, prevTime *time.Time) {
+func lookupAndPrintXdpStats(ebpfMap *ebpf.Map) {
 	actionKeys := map[string]uint32{
 		"XDP_ABORTED":  0,
 		"XDP_DROP":     1,
@@ -53,11 +53,6 @@ func lookupAndPrintXdpStats(ebpfMap *ebpf.Map, prevValues map[string]uint64, pre
 
 	// Predefined order of keys
 	orderedKeys := []string{"XDP_ABORTED", "XDP_DROP", "XDP_PASS", "XDP_TX", "XDP_REDIRECT"}
-	now := time.Now()
-	deltaTime := now.Sub(*prevTime).Seconds()
-	if deltaTime == 0 {
-		return // Avoid division by zero
-	}
 
 	fmt.Println("XDP Actions:")
 	for _, action := range orderedKeys {
@@ -66,15 +61,11 @@ func lookupAndPrintXdpStats(ebpfMap *ebpf.Map, prevValues map[string]uint64, pre
 		if err := ebpfMap.Lookup(&key, &value); err != nil {
 			log.Fatal(err)
 		}
-		prev := prevValues[action]
-		prevValues[action] = value
-		rate := float64(value-prev) / deltaTime
-		fmt.Printf("%s: %d (Rate: %.2f/s)\n", action, value, rate)
+		fmt.Printf("%s: %d\n", action, value)
 	}
-	*prevTime = now
 }
 
-func lookupAndPrintTcStats(ebpfMap *ebpf.Map, prevValues map[string]uint64, prevTime *time.Time) {
+func lookupAndPrintTcStats(ebpfMap *ebpf.Map) {
 	tcActionKeys := map[string]uint32{
 		//"TC_ACT_UNSPEC":     uint32(-1),
 		"TC_ACT_OK":         0,
@@ -93,11 +84,6 @@ func lookupAndPrintTcStats(ebpfMap *ebpf.Map, prevValues map[string]uint64, prev
 		"TC_ACT_OK", "TC_ACT_RECLASSIFY", "TC_ACT_SHOT", "TC_ACT_PIPE",
 		"TC_ACT_STOLEN", "TC_ACT_QUEUED", "TC_ACT_REPEAT", "TC_ACT_REDIRECT", "TC_ACT_TRAP",
 	}
-	now := time.Now()
-	deltaTime := now.Sub(*prevTime).Seconds()
-	if deltaTime == 0 {
-		return // Avoid division by zero
-	}
 
 	fmt.Println("\nTC Actions:")
 	for _, action := range orderedKeys {
@@ -106,12 +92,8 @@ func lookupAndPrintTcStats(ebpfMap *ebpf.Map, prevValues map[string]uint64, prev
 		if err := ebpfMap.Lookup(&key, &value); err != nil {
 			log.Fatal(err)
 		}
-		prev := prevValues[action]
-		prevValues[action] = value
-		rate := float64(value-prev) / deltaTime
-		fmt.Printf("%s: %d (Rate: %.2f/s)\n", action, value, rate)
+		fmt.Printf("%s: %d\n", action, value)
 	}
-	*prevTime = now
 }
 
 func main() {
@@ -211,15 +193,10 @@ func main() {
 
 	log.Println("Programs attached and running...")
 
-	prevXdpValues := make(map[string]uint64)
-	prevTcValues := make(map[string]uint64)
-	prevTimeXdp := time.Now()
-	prevTimeTc := time.Now()
-
 	for {
 		fmt.Print("\033[H\033[J") // Clear screen
-		lookupAndPrintXdpStats(obj.XdpActionCountMap, prevXdpValues, &prevTimeXdp)
-		lookupAndPrintTcStats(obj.TcActionCountMap, prevTcValues, &prevTimeTc)
+		lookupAndPrintXdpStats(obj.XdpActionCountMap)
+		lookupAndPrintTcStats(obj.TcActionCountMap)
 
 		select {
 		case <-ctx.Done():
