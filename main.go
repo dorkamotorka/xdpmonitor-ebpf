@@ -18,6 +18,19 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
+var (
+	xdpKeys = map[string]uint32{
+		"XDP_ABORTED": 0, "XDP_DROP": 1, "XDP_PASS": 2, "XDP_TX": 3, "XDP_REDIRECT": 4,
+	}
+	xdpKeyOrder = []string{"XDP_ABORTED", "XDP_DROP", "XDP_PASS", "XDP_TX", "XDP_REDIRECT"}
+
+	tcKeys = map[string]uint32{
+		"TC_ACT_OK": 0, "TC_ACT_RECLASSIFY": 1, "TC_ACT_SHOT": 2, "TC_ACT_PIPE": 3,
+		"TC_ACT_STOLEN": 4, "TC_ACT_QUEUED": 5, "TC_ACT_REPEAT": 6, "TC_ACT_REDIRECT": 7, "TC_ACT_TRAP": 8,
+	}
+	tcKeyOrder = []string{"TC_ACT_OK", "TC_ACT_RECLASSIFY", "TC_ACT_SHOT", "TC_ACT_PIPE", "TC_ACT_STOLEN", "TC_ACT_QUEUED", "TC_ACT_REPEAT", "TC_ACT_REDIRECT", "TC_ACT_TRAP"}
+)
+
 func getFuncName(prog *ebpf.Program) (string, error) {
 	info, err := prog.Info()
         if err != nil {
@@ -42,52 +55,10 @@ func getFuncName(prog *ebpf.Program) (string, error) {
 	return "", fmt.Errorf("no entry function found in program")
 }
 
-func lookupAndPrintXdpStats(ebpfMap *ebpf.Map) {
-	actionKeys := map[string]uint32{
-		"XDP_ABORTED":  0,
-		"XDP_DROP":     1,
-		"XDP_PASS":     2,
-		"XDP_TX":       3,
-		"XDP_REDIRECT": 4,
-	}
-
-	// Predefined order of keys
-	orderedKeys := []string{"XDP_ABORTED", "XDP_DROP", "XDP_PASS", "XDP_TX", "XDP_REDIRECT"}
-
-	fmt.Println("XDP Actions:")
-	for _, action := range orderedKeys {
-		key := actionKeys[action]
-		var value uint64
-		if err := ebpfMap.Lookup(&key, &value); err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("%s: %d\n", action, value)
-	}
-}
-
-func lookupAndPrintTcStats(ebpfMap *ebpf.Map) {
-	tcActionKeys := map[string]uint32{
-		//"TC_ACT_UNSPEC":     uint32(-1),
-		"TC_ACT_OK":         0,
-		"TC_ACT_RECLASSIFY": 1,
-		"TC_ACT_SHOT":       2,
-		"TC_ACT_PIPE":       3,
-		"TC_ACT_STOLEN":     4,
-		"TC_ACT_QUEUED":     5,
-		"TC_ACT_REPEAT":     6,
-		"TC_ACT_REDIRECT":   7,
-		"TC_ACT_TRAP":       8,
-	}
-
-	// Define a fixed order for TC actions
-	orderedKeys := []string{
-		"TC_ACT_OK", "TC_ACT_RECLASSIFY", "TC_ACT_SHOT", "TC_ACT_PIPE",
-		"TC_ACT_STOLEN", "TC_ACT_QUEUED", "TC_ACT_REPEAT", "TC_ACT_REDIRECT", "TC_ACT_TRAP",
-	}
-
-	fmt.Println("\nTC Actions:")
-	for _, action := range orderedKeys {
-		key := tcActionKeys[action]
+func lookupAndPrintStats(ebpfMap *ebpf.Map, keys map[string]uint32, keyOrder []string, title string) {
+	fmt.Println("\n" + title + ":")
+	for _, action := range keyOrder { // Iterate using ordered slice
+		key := keys[action]
 		var value uint64
 		if err := ebpfMap.Lookup(&key, &value); err != nil {
 			log.Fatal(err)
@@ -195,8 +166,8 @@ func main() {
 
 	for {
 		fmt.Print("\033[H\033[J") // Clear screen
-		lookupAndPrintXdpStats(obj.XdpActionCountMap)
-		lookupAndPrintTcStats(obj.TcActionCountMap)
+		lookupAndPrintStats(obj.XdpActionCountMap, xdpKeys, xdpKeyOrder, "XDP Actions")
+		lookupAndPrintStats(obj.TcActionCountMap, tcKeys, tcKeyOrder, "TC Actions")
 
 		select {
 		case <-ctx.Done():
