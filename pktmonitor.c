@@ -22,7 +22,6 @@ struct {
     __uint(max_entries, 9);
 } tc_action_count_map SEC(".maps");
 
-// XDP
 SEC("fexit/xdp")
 int BPF_PROG(fexit_xdp, struct xdp_buff *xdp, int ret) {
     bpf_printk("XDP Fexit triggered.");
@@ -33,12 +32,6 @@ int BPF_PROG(fexit_xdp, struct xdp_buff *xdp, int ret) {
     return 0;
 }
 
-SEC("xdp")
-int xdp_dummy(struct xdp_md *ctx) {
-    return XDP_PASS;
-}
-
-// TC
 SEC("fexit/tc")
 int BPF_PROG(fexit_tc, struct sk_buff *skb, int ret) {
     bpf_printk("TC Fexit triggered.");
@@ -47,11 +40,6 @@ int BPF_PROG(fexit_tc, struct sk_buff *skb, int ret) {
         __sync_fetch_and_add(count, 1);
     }
     return 0;
-}
-
-SEC("tc")
-int tc_dummy(struct __sk_buff *ctx) {
-    return TC_ACT_OK;
 }
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";

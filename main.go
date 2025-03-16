@@ -5,7 +5,6 @@ package main
 import (
 	"log"
 	"fmt"
-	"net"
 	"errors"
 	"os"
 	"os/signal"
@@ -116,8 +115,10 @@ func lookupAndPrintTcStats(ebpfMap *ebpf.Map, prevValues map[string]uint64, prev
 }
 
 func main() {
-	var device string
-	flag.StringVarP(&device, "device", "d", "lo", "device to attach XDP program")
+	var xdpProgID int
+	flag.IntVarP(&xdpProgID, "xdp_program_id", "x", 0, "XDP program ID to trace")
+	var tcProgID int
+	flag.IntVarP(&tcProgID, "tc_program_id", "t", 0, "TC program ID to trace")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -127,50 +128,49 @@ func main() {
 		log.Fatalf("Failed to remove rlimit memlock: %v", err)
 	}
 
-	ifi, err := net.InterfaceByName(device)
-	if err != nil {
-		log.Fatalf("Getting interface %s: %s", device, err)
-	}
-
 	spec, err := loadPktmonitor()
 	if err != nil {
 		log.Fatalf("Failed to load pktmonitor bpf spec: %v", err)
 		return
 	}
 
-	xdpDummy := spec.Programs["xdp_dummy"]
-	xdpDummyProg, err := ebpf.NewProgram(xdpDummy)
-	if err != nil {
-		log.Fatalf("Failed to create XDP dummy program: %v", err)
-	}
-	defer xdpDummyProg.Close()
+	if xdpProgID != 0 {
+		// Load eBPF program from ID
+		xdpProg, err := ebpf.NewProgramFromID(ebpf.ProgramID(xdpProgID))
+		if err != nil {
+			log.Printf("Failed to load XDP program ID %d: %v", xdpProgID, err)
+		}
+		defer xdpProg.Close()
 
-	tcDummy := spec.Programs["tc_dummy"]
-	tcDummyProg, err := ebpf.NewProgram(tcDummy)
-	if err != nil {
-		log.Fatalf("Failed to create TC dummy program: %v", err)
-	}
-	defer tcDummyProg.Close()
+		xdpFuncName, err := getFuncName(xdpProg)
+		if err != nil {
+			log.Printf("Failed to get function name: %v", err)
+			return
+		}
 
-	// Get function name of the dummy program to attach fentry/fexit hooks
-	// And configure fentry/fexit hooks target
-	xdpFuncName, err := getFuncName(xdpDummyProg)
-	if err != nil {
-		log.Printf("Failed to get function name: %v", err)
-		return
+		xdpFexit := spec.Programs["fexit_xdp"]
+		xdpFexit.AttachTarget = xdpProg
+		xdpFexit.AttachTo = xdpFuncName
 	}
-	xdpFexit := spec.Programs["fexit_xdp"]
-	xdpFexit.AttachTarget = xdpDummyProg
-	xdpFexit.AttachTo = xdpFuncName
 
-	tcFuncName, err := getFuncName(tcDummyProg)
-	if err != nil {
-		log.Printf("Failed to get function name: %v", err)
-		return
+	if tcProgID != 0 {
+		// Load eBPF program from ID
+		tcProg, err := ebpf.NewProgramFromID(ebpf.ProgramID(tcProgID))
+		if err != nil {
+			log.Printf("Failed to load TC program ID %d: %v", tcProgID, err)
+		}
+		defer tcProg.Close()
+
+		tcFuncName, err := getFuncName(tcProg)
+		if err != nil {
+			log.Printf("Failed to get function name: %v", err)
+			return
+		}
+
+		tcFexit := spec.Programs["fexit_tc"]
+		tcFexit.AttachTarget = tcProg
+		tcFexit.AttachTo = tcFuncName
 	}
-	tcFexit := spec.Programs["fexit_tc"]
-	tcFexit.AttachTarget = tcDummyProg
-	tcFexit.AttachTo = tcFuncName
 
 	// Now load and assign eBPF program 
 	// We couldn't use loadpktmonitorObjects directly since it doesn't allow us to modify spec like AttachTarget, AttachTo before loading
@@ -185,50 +185,31 @@ func main() {
 	}
 	defer obj.Close()
 
-	// Attach dummy XDP program to trace
-	xdplink, err := link.AttachXDP(link.XDPOptions{
-		Program:   xdpDummyProg,
-		Interface: ifi.Index,
-		//Flags: link.XDPDriverMode,
-	})
-	if err != nil {
-		log.Fatal("Attaching XDP:", err)
+	if xdpProgID != 0 {
+		// Attach fexit to XDP
+		xdpfexit, err := link.AttachTracing(link.TracingOptions{
+			Program:   obj.FexitXdp,
+			//AttachType: ebpf.AttachTraceFExit,
+		})
+		if err != nil {
+			log.Fatalf("Failed to attach fexit program: %v", err)
+		}
+		defer xdpfexit.Close()
 	}
-	defer xdplink.Close()
 
-	// Attach fexit to XDP
-	xdpfexit, err := link.AttachTracing(link.TracingOptions{
-                Program:   obj.FexitXdp,
-                //AttachType: ebpf.AttachTraceFExit,
-        })
-        if err != nil {
-                log.Fatalf("Failed to attach fexit program: %v", err)
-        }
-        defer xdpfexit.Close()
-
-	// Attach dummy TC program to trace
-	tclink, err := link.AttachTCX(link.TCXOptions{
-		Program:   tcDummyProg,
-		Attach:	   ebpf.AttachTCXIngress,
-		Interface: ifi.Index,
-	})
-	if err != nil {
-			log.Fatal("Attaching TC:", err)
+	if tcProgID != 0 {
+		// Attach fexit to TC
+		tcfexit, err := link.AttachTracing(link.TracingOptions{
+			Program:   obj.FexitTc,
+			//AttachType: ebpf.AttachTraceFExit,
+		})
+		if err != nil {
+			log.Fatalf("Failed to attach fexit program: %v", err)
+		}
+		defer tcfexit.Close()
 	}
-	defer tclink.Close()
-
-	// Attach fexit to TC
-	tcfexit, err := link.AttachTracing(link.TracingOptions{
-                Program:   obj.FexitTc,
-                //AttachType: ebpf.AttachTraceFExit,
-        })
-        if err != nil {
-                log.Fatalf("Failed to attach fexit program: %v", err)
-        }
-        defer tcfexit.Close()
 
 	log.Println("Programs attached and running...")
-	log.Printf("Try sending a dummy network packet to the %s.", device)
 
 	prevXdpValues := make(map[string]uint64)
 	prevTcValues := make(map[string]uint64)
