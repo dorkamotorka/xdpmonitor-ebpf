@@ -1,4 +1,4 @@
-module pktmonitor-ebpf
+module xdpmonitor-ebpf
 
 go 1.23.1
 

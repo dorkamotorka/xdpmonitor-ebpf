@@ -1,6 +1,6 @@
 package main
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpf pktmonitor pktmonitor.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpf xdpmonitor xdpmonitor.c
 
 import (
 	"log"
@@ -23,12 +23,6 @@ var (
 		"XDP_ABORTED": 0, "XDP_DROP": 1, "XDP_PASS": 2, "XDP_TX": 3, "XDP_REDIRECT": 4,
 	}
 	xdpKeyOrder = []string{"XDP_ABORTED", "XDP_DROP", "XDP_PASS", "XDP_TX", "XDP_REDIRECT"}
-
-	tcKeys = map[string]uint32{
-		"TC_ACT_OK": 0, "TC_ACT_RECLASSIFY": 1, "TC_ACT_SHOT": 2, "TC_ACT_PIPE": 3,
-		"TC_ACT_STOLEN": 4, "TC_ACT_QUEUED": 5, "TC_ACT_REPEAT": 6, "TC_ACT_REDIRECT": 7, "TC_ACT_TRAP": 8,
-	}
-	tcKeyOrder = []string{"TC_ACT_OK", "TC_ACT_RECLASSIFY", "TC_ACT_SHOT", "TC_ACT_PIPE", "TC_ACT_STOLEN", "TC_ACT_QUEUED", "TC_ACT_REPEAT", "TC_ACT_REDIRECT", "TC_ACT_TRAP"}
 )
 
 func getFuncName(prog *ebpf.Program) (string, error) {
@@ -70,9 +64,11 @@ func lookupAndPrintStats(ebpfMap *ebpf.Map, keys map[string]uint32, keyOrder []s
 func main() {
 	var xdpProgID int
 	flag.IntVarP(&xdpProgID, "xdp_program_id", "x", 0, "XDP program ID to trace")
-	var tcProgID int
-	flag.IntVarP(&tcProgID, "tc_program_id", "t", 0, "TC program ID to trace")
 	flag.Parse()
+
+	if xdpProgID == 0 {
+		fmt.Println("You need to specify XDP program ID")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -81,53 +77,32 @@ func main() {
 		log.Fatalf("Failed to remove rlimit memlock: %v", err)
 	}
 
-	spec, err := loadPktmonitor()
+	spec, err := loadXdpmonitor()
 	if err != nil {
-		log.Fatalf("Failed to load pktmonitor bpf spec: %v", err)
+		log.Fatalf("Failed to load xdpmonitor bpf spec: %v", err)
 		return
 	}
 
-	if xdpProgID != 0 {
-		// Load eBPF program from ID
-		xdpProg, err := ebpf.NewProgramFromID(ebpf.ProgramID(xdpProgID))
-		if err != nil {
-			log.Printf("Failed to load XDP program ID %d: %v", xdpProgID, err)
-		}
-		defer xdpProg.Close()
+	// Load eBPF program from ID
+	xdpProg, err := ebpf.NewProgramFromID(ebpf.ProgramID(xdpProgID))
+	if err != nil {
+		log.Printf("Failed to load XDP program ID %d: %v", xdpProgID, err)
+	}
+	defer xdpProg.Close()
 
-		xdpFuncName, err := getFuncName(xdpProg)
-		if err != nil {
-			log.Printf("Failed to get function name: %v", err)
-			return
-		}
-
-		xdpFexit := spec.Programs["fexit_xdp"]
-		xdpFexit.AttachTarget = xdpProg
-		xdpFexit.AttachTo = xdpFuncName
+	xdpFuncName, err := getFuncName(xdpProg)
+	if err != nil {
+		log.Printf("Failed to get function name: %v", err)
+		return
 	}
 
-	if tcProgID != 0 {
-		// Load eBPF program from ID
-		tcProg, err := ebpf.NewProgramFromID(ebpf.ProgramID(tcProgID))
-		if err != nil {
-			log.Printf("Failed to load TC program ID %d: %v", tcProgID, err)
-		}
-		defer tcProg.Close()
-
-		tcFuncName, err := getFuncName(tcProg)
-		if err != nil {
-			log.Printf("Failed to get function name: %v", err)
-			return
-		}
-
-		tcFexit := spec.Programs["fexit_tc"]
-		tcFexit.AttachTarget = tcProg
-		tcFexit.AttachTo = tcFuncName
-	}
+	xdpFexit := spec.Programs["fexit_xdp"]
+	xdpFexit.AttachTarget = xdpProg
+	xdpFexit.AttachTo = xdpFuncName
 
 	// Now load and assign eBPF program 
-	// We couldn't use loadpktmonitorObjects directly since it doesn't allow us to modify spec like AttachTarget, AttachTo before loading
-	var obj pktmonitorObjects
+	// We couldn't use loadxdpmonitorObjects directly since it doesn't allow us to modify spec like AttachTarget, AttachTo before loading
+	var obj xdpmonitorObjects
 	if err := spec.LoadAndAssign(&obj, nil); err != nil {
 		var ve *ebpf.VerifierError
 		if errors.As(err, &ve) {
@@ -138,36 +113,21 @@ func main() {
 	}
 	defer obj.Close()
 
-	if xdpProgID != 0 {
-		// Attach fexit to XDP
-		xdpfexit, err := link.AttachTracing(link.TracingOptions{
-			Program:   obj.FexitXdp,
-			//AttachType: ebpf.AttachTraceFExit,
-		})
-		if err != nil {
-			log.Fatalf("Failed to attach fexit program: %v", err)
-		}
-		defer xdpfexit.Close()
+	// Attach fexit to XDP
+	xdpfexit, err := link.AttachTracing(link.TracingOptions{
+		Program:   obj.FexitXdp,
+		//AttachType: ebpf.AttachTraceFExit,
+	})
+	if err != nil {
+		log.Fatalf("Failed to attach fexit program: %v", err)
 	}
+	defer xdpfexit.Close()
 
-	if tcProgID != 0 {
-		// Attach fexit to TC
-		tcfexit, err := link.AttachTracing(link.TracingOptions{
-			Program:   obj.FexitTc,
-			//AttachType: ebpf.AttachTraceFExit,
-		})
-		if err != nil {
-			log.Fatalf("Failed to attach fexit program: %v", err)
-		}
-		defer tcfexit.Close()
-	}
-
-	log.Println("Programs attached and running...")
+	fmt.Printf("Tracing XDP Program with ID %d...", xdpProgID)
 
 	for {
 		fmt.Print("\033[H\033[J") // Clear screen
 		lookupAndPrintStats(obj.XdpActionCountMap, xdpKeys, xdpKeyOrder, "XDP Actions")
-		lookupAndPrintStats(obj.TcActionCountMap, tcKeys, tcKeyOrder, "TC Actions")
 
 		select {
 		case <-ctx.Done():
