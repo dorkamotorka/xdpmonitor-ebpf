@@ -2,6 +2,8 @@
 
 A tool for monitoring XDP actions using eBPF—essentially, tracing eBPF with eBPF.
 
+![carbon (78)](https://github.com/user-attachments/assets/f67dcbad-fed9-4c20-9468-183e439d2462)
+
 While working on various eBPF projects, I often needed to trace XDP eBPF return codes. For example, in one project, I built a simple eBPF/XDP-based firewall and wanted to measure the rate at which packets were dropped. However, most existing tools couldn't capture drops at the XDP level. This is precisely why XDP-based firewalls are effective—they drop packets before they reach the Linux networking stack. To solve this, I had to take a different approach.
 
 In another case, multiple XDP programs were dropping packets, and I needed to understand the exact actions each program imposed on incoming traffic.
